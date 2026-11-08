@@ -24,11 +24,14 @@ Motherboard pins (`CPU_FAN`, `SYS_FAN1`–`SYS_FAN4`) and USB hubs (`Commander P
    - On any fan card on the right panel, click **`⚡ LOCATE 100%`**.
    - That specific header will immediately ramp to **100% speed for 6 seconds** (displaying a cyan `LOCATING (6s)` badge).
    - Look inside your case (or listen) to see which fan bank sped up.
-3. **Assign Its Physical Case Zone**:
+3. **Assign Its Physical Case Zone & Customize Your 3D Case Model**:
    - While the fan is selected (or pulsing), click its physical zone either:
-     - Directly on the **HYTE Y70 Dual-Chamber Blueprint** on the left (`TOP EXHAUST / 360 RAD`, `SIDE M/B INTAKE`, `BOTTOM COLD-FLOOR`, `REAR EXHAUST`, `CPU / AIO`, or `RTX VERTICAL`), **or**
+     - Directly on the **3D Chassis Studio View** on the left (`TOP 360 RAD`, `SIDE INTAKE`, `COLD-FLOOR`, `REAR EXHAUST`, `CPU AIO`, or `RTX 5080`), **or**
      - Using the **`CASE POSITION:`** buttons (`TOP`, `SIDE`, `BOTTOM`, `REAR`, `CPU/AIO`, `GPU`) in the bottom-left inspector panel, **or**
      - Clicking the **`LOC: ... ▾`** button on the fan card itself.
+   - **Switch or Download Any 3D PC Case (`3D CASE: ... ▾` & `🌐 GET CASE 3D`)**:
+     - Click **`3D CASE: HYTE Y70 ▾`** above the 3D view to cycle through built-in 3D case models (`HYTE Y70`, `HYTE Y60`, `Lian Li O11 Dynamic EVO`, `NZXT H9 Flow`, `Corsair 5000D/4000D`).
+     - Or click **`🌐 GET CASE 3D`**, enter any PC case name (e.g., `Lian Li O11 Vision`, `Fractal Design North`, `Phanteks NV7`), and HyteFlow will automatically download a 3D studio render of your case from the web, composite it onto the dark studio stage, and overlay the 3D spinning ARGB fan turbines and live HUD telemetry badges.
 4. **Set the Daisy-Chain / Splitter Fan Count (`1x`–`4x`)**:
    - If you have 3 fans daisy-chained together on a single cable (for example, 3x 120mm fans on the bottom cold-floor or top 360mm radiator), select the fan and click **`3x`** next to **`FANS ON HEADER:`** in the bottom-left inspector.
    - The blueprint and top bar (`INSTALLED TOPOLOGY`) will now accurately reflect the total number of physical fans spinning in that zone.

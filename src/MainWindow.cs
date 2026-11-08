@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Shapes;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 
 namespace HyteFlow
@@ -114,15 +115,38 @@ namespace HyteFlow
             var topDock = new DockPanel { LastChildFill = false };
 
             var brandStack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            var accentBar = new Border
+            string iconPngPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "app_icon.png");
+            if (File.Exists(iconPngPath))
             {
-                Width = 5,
-                Height = 28,
-                CornerRadius = new CornerRadius(2),
-                Background = StudioTheme.AccentOrange,
-                Margin = new Thickness(0, 0, 12, 0)
-            };
-            brandStack.Children.Add(accentBar);
+                try
+                {
+                    var iconBmp = new BitmapImage(new Uri(iconPngPath, UriKind.Absolute));
+                    Icon = iconBmp;
+                    var img = new Image
+                    {
+                        Source = iconBmp,
+                        Width = 40,
+                        Height = 40,
+                        Margin = new Thickness(0, 0, 12, 0),
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
+                    brandStack.Children.Add(img);
+                }
+                catch { }
+            }
+            else
+            {
+                var accentBar = new Border
+                {
+                    Width = 5,
+                    Height = 28,
+                    CornerRadius = new CornerRadius(2),
+                    Background = StudioTheme.AccentOrange,
+                    Margin = new Thickness(0, 0, 12, 0)
+                };
+                brandStack.Children.Add(accentBar);
+            }
 
             var titleStack = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             var appTitle = new TextBlock
@@ -185,7 +209,7 @@ namespace HyteFlow
             };
             actionsStack.Children.Add(_btnStartWindows);
 
-            var btnFixLegacy = CreateHeaderButton("🔧 REPAIR OLD FANCONTROL CONFIG", false, StudioTheme.TextMuted);
+            var btnFixLegacy = CreateHeaderButton("🔧 FIX FANCONTROL", false, StudioTheme.TextMuted);
             btnFixLegacy.Click += (s, e) =>
             {
                 HardwareEngine.RepairLegacyFanControlConfig(out string rep);
@@ -261,16 +285,83 @@ namespace HyteFlow
             };
             var bpDock = new DockPanel();
 
-            var filterWrap = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
-            filterWrap.Children.Add(CreateFilterChip("ALL ZONES", null));
+            var topBpBar = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+            var filterWrap = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
+            filterWrap.Children.Add(CreateFilterChip("ALL", null));
             filterWrap.Children.Add(CreateFilterChip("TOP", ChassisZone.Top));
             filterWrap.Children.Add(CreateFilterChip("SIDE", ChassisZone.Side));
             filterWrap.Children.Add(CreateFilterChip("BOTTOM", ChassisZone.Bottom));
             filterWrap.Children.Add(CreateFilterChip("REAR", ChassisZone.Rear));
-            filterWrap.Children.Add(CreateFilterChip("CPU/AIO", ChassisZone.CpuAio));
+            filterWrap.Children.Add(CreateFilterChip("CPU", ChassisZone.CpuAio));
             filterWrap.Children.Add(CreateFilterChip("GPU", ChassisZone.Gpu));
-            DockPanel.SetDock(filterWrap, Dock.Top);
-            bpDock.Children.Add(filterWrap);
+            DockPanel.SetDock(filterWrap, Dock.Left);
+            topBpBar.Children.Add(filterWrap);
+
+            var caseCtrlStack = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var btnCaseCycle = new Button
+            {
+                Content = "3D CASE: HYTE Y70 ▾",
+                FontSize = 9.5,
+                FontFamily = new FontFamily("Consolas"),
+                FontWeight = FontWeights.Bold,
+                Padding = new Thickness(7, 4, 7, 4),
+                Margin = new Thickness(0, 0, 4, 0),
+                Cursor = Cursors.Hand,
+                Background = StudioTheme.BgCard,
+                Foreground = StudioTheme.AccentCyan,
+                BorderBrush = StudioTheme.AccentCyan,
+                BorderThickness = new Thickness(1)
+            };
+            btnCaseCycle.Click += (s, e) =>
+            {
+                int idx = CaseCatalog.Presets.IndexOf(_blueprint.CurrentCaseModel);
+                var nextModel = CaseCatalog.Presets[(idx + 1) % CaseCatalog.Presets.Count];
+                _blueprint.CurrentCaseModel = nextModel;
+                _engine.Config.ChassisPreset = nextModel.Id;
+                _engine.SaveConfig();
+                string shortCase = nextModel.DisplayName.Split('(')[0].Trim().ToUpperInvariant();
+                btnCaseCycle.Content = $"3D CASE: {shortCase} ▾";
+                _statusFooterText.Text = $"Switched 3D Chassis Representation to: {nextModel.DisplayName}";
+            };
+            caseCtrlStack.Children.Add(btnCaseCycle);
+
+            var btnDownloadCase = new Button
+            {
+                Content = "🌐 GET CASE 3D",
+                FontSize = 9.5,
+                FontFamily = new FontFamily("Consolas"),
+                FontWeight = FontWeights.Bold,
+                Padding = new Thickness(7, 4, 7, 4),
+                Cursor = Cursors.Hand,
+                Background = StudioTheme.BgCard,
+                Foreground = StudioTheme.AccentOrange,
+                BorderBrush = StudioTheme.AccentOrange,
+                BorderThickness = new Thickness(1),
+                ToolTip = "Type any PC case model name to download its 3D studio representation from the web."
+            };
+            btnDownloadCase.Click += async (s, e) =>
+            {
+                string input = PromptForCaseName();
+                if (!string.IsNullOrWhiteSpace(input))
+                {
+                    btnDownloadCase.Content = "⏳ FETCHING 3D...";
+                    _statusFooterText.Text = $"Downloading 3D studio render for '{input}'...";
+                    var downloaded = await CaseCatalog.DownloadCaseRenderAsync(input);
+                    _blueprint.CurrentCaseModel = downloaded;
+                    _engine.Config.ChassisPreset = downloaded.Id;
+                    _engine.SaveConfig();
+                    string shortCase = downloaded.DisplayName.Split('(')[0].Trim().ToUpperInvariant();
+                    btnCaseCycle.Content = $"3D CASE: {shortCase} ▾";
+                    btnDownloadCase.Content = "🌐 GET CASE 3D";
+                    _statusFooterText.Text = $"Loaded 3D Chassis Model: {downloaded.DisplayName}";
+                }
+            };
+            caseCtrlStack.Children.Add(btnDownloadCase);
+            DockPanel.SetDock(caseCtrlStack, Dock.Right);
+            topBpBar.Children.Add(caseCtrlStack);
+
+            DockPanel.SetDock(topBpBar, Dock.Top);
+            bpDock.Children.Add(topBpBar);
 
             _blueprint = new HyteY70BlueprintControl(_engine);
             _blueprint.ZoneClicked += OnBlueprintZoneClicked;
@@ -695,11 +786,11 @@ namespace HyteFlow
             var btn = new Button
             {
                 Content = title,
-                FontSize = 10,
+                FontSize = 9.5,
                 FontFamily = new FontFamily("Consolas"),
                 FontWeight = FontWeights.Bold,
-                Padding = new Thickness(8, 4, 8, 4),
-                Margin = new Thickness(0, 0, 5, 0),
+                Padding = new Thickness(5, 3, 5, 3),
+                Margin = new Thickness(0, 0, 3, 0),
                 Cursor = Cursors.Hand,
                 Background = StudioTheme.BgCard,
                 Foreground = StudioTheme.TextPrimary,
@@ -848,10 +939,15 @@ namespace HyteFlow
         {
             try
             {
+                string icoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "hyteflow.ico");
+                var trayIco = File.Exists(icoPath)
+                    ? new System.Drawing.Icon(icoPath)
+                    : System.Drawing.SystemIcons.Application;
+
                 _trayIcon = new System.Windows.Forms.NotifyIcon
                 {
-                    Text = "HyteFlow — Universal Fan Studio",
-                    Icon = System.Drawing.SystemIcons.Application,
+                    Text = "HyteFlow — Universal 3D Fan Studio",
+                    Icon = trayIco,
                     Visible = true
                 };
                 var menu = new System.Windows.Forms.ContextMenuStrip();
@@ -892,6 +988,60 @@ namespace HyteFlow
             UpdateInspectorPanel();
             UpdateTelemetryHeader();
             _blueprint.InvalidateVisual();
+        }
+
+        private string PromptForCaseName()
+        {
+            var dlg = new Window
+            {
+                Title = "Download 3D PC Case Representation",
+                Width = 420,
+                Height = 190,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                Background = StudioTheme.BgPanel,
+                Foreground = StudioTheme.TextPrimary,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStyle = WindowStyle.ToolWindow
+            };
+            var stack = new StackPanel { Margin = new Thickness(18) };
+            stack.Children.Add(new TextBlock
+            {
+                Text = "ENTER YOUR PC CASE BRAND & MODEL:",
+                FontSize = 11.5,
+                FontFamily = new FontFamily("Consolas"),
+                FontWeight = FontWeights.Bold,
+                Foreground = StudioTheme.AccentCyan,
+                Margin = new Thickness(0, 0, 0, 6)
+            });
+            stack.Children.Add(new TextBlock
+            {
+                Text = "Examples: HYTE Y70, Lian Li O11 Vision, NZXT H9 Flow, Corsair 5000D, Phanteks NV7",
+                FontSize = 10.5,
+                Foreground = StudioTheme.TextMuted,
+                Margin = new Thickness(0, 0, 0, 10)
+            });
+            var tb = new TextBox
+            {
+                Text = "Lian Li O11 Dynamic EVO",
+                Height = 28,
+                FontSize = 12,
+                Padding = new Thickness(6, 3, 6, 3),
+                Background = StudioTheme.BgCard,
+                Foreground = StudioTheme.TextPrimary,
+                BorderBrush = StudioTheme.BorderBrush
+            };
+            stack.Children.Add(tb);
+
+            var btnRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14, 0, 0) };
+            string result = null;
+            var btnOk = CreateHeaderButton("🌐 DOWNLOAD & APPLY 3D VIEW", true, StudioTheme.AccentOrange);
+            btnOk.Click += (s, e) => { result = tb.Text; dlg.Close(); };
+            btnRow.Children.Add(btnOk);
+            stack.Children.Add(btnRow);
+            dlg.Content = stack;
+            dlg.ShowDialog();
+            return result;
         }
     }
 

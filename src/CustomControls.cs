@@ -5,16 +5,17 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace HyteFlow
 {
     public static class StudioTheme
     {
         public static readonly Color BgCanvasColor = Color.FromRgb(10, 12, 15);
-        public static readonly Color BgPanelColor = Color.FromRgb(17, 20, 25);
-        public static readonly Color BgCardColor = Color.FromRgb(23, 27, 34);
-        public static readonly Color BgCardHoverColor = Color.FromRgb(30, 35, 44);
-        public static readonly Color BorderColor = Color.FromRgb(38, 45, 56);
+        public static readonly Color BgPanelColor = Color.FromRgb(16, 19, 24);
+        public static readonly Color BgCardColor = Color.FromRgb(22, 26, 33);
+        public static readonly Color BgCardHoverColor = Color.FromRgb(30, 36, 46);
+        public static readonly Color BorderColor = Color.FromRgb(38, 46, 58);
         public static readonly Color BorderActiveColor = Color.FromRgb(255, 107, 43);
         public static readonly Color AccentOrangeColor = Color.FromRgb(255, 107, 43);
         public static readonly Color AccentCyanColor = Color.FromRgb(0, 210, 255);
@@ -58,47 +59,73 @@ namespace HyteFlow
 
         public SpinningFanControl()
         {
-            Width = 46;
-            Height = 46;
+            Width = 48;
+            Height = 48;
             IsHitTestVisible = false;
         }
 
         protected override void OnRender(DrawingContext dc)
         {
-            double cx = ActualWidth / 2.0;
-            double cy = ActualHeight / 2.0;
-            double r = Math.Min(cx, cy) - 3.0;
+            DrawTurbine(dc, ActualWidth / 2.0, ActualHeight / 2.0, Math.Min(ActualWidth, ActualHeight) / 2.0 - 3.0, Angle, Rpm, DutyPercent, IsPulsing, false);
+        }
+
+        public static void DrawTurbine(
+            DrawingContext dc,
+            double cx,
+            double cy,
+            double r,
+            double angleDeg,
+            int rpm,
+            double dutyPercent,
+            bool isPulsing,
+            bool isIntakeCyan)
+        {
             if (r <= 4) return;
 
-            var ringPen = new Pen(new SolidColorBrush(Color.FromRgb(40, 48, 60)), 2.5);
-            dc.DrawEllipse(new SolidColorBrush(Color.FromRgb(14, 17, 22)), ringPen, new Point(cx, cy), r, r);
+            bool spinning = rpm > 0 || isPulsing;
+            Color primaryGlow = isPulsing ? Color.FromRgb(0, 235, 255) :
+                                isIntakeCyan ? Color.FromRgb(0, 210, 255) :
+                                Color.FromRgb(255, 107, 43);
 
-            var accentBrush = IsPulsing ? StudioTheme.AccentCyan :
-                              (Rpm > 0 ? StudioTheme.AccentOrange : StudioTheme.TextDim);
-
-            if (DutyPercent > 1)
+            if (spinning)
             {
-                double sweep = Math.Min(359.0, (DutyPercent / 100.0) * 359.0);
-                var arcGeom = CreateArcGeometry(cx, cy, r, -90, -90 + sweep);
-                dc.DrawGeometry(null, new Pen(accentBrush, 2.5), arcGeom);
+                var glowBrush = new RadialGradientBrush(
+                    Color.FromArgb(isPulsing ? (byte)95 : (byte)50, primaryGlow.R, primaryGlow.G, primaryGlow.B),
+                    Color.FromArgb(0, primaryGlow.R, primaryGlow.G, primaryGlow.B));
+                dc.DrawEllipse(glowBrush, null, new Point(cx, cy), r * 1.22, r * 1.22);
             }
 
-            dc.PushTransform(new RotateTransform(Angle, cx, cy));
-            var bladeBrush = Rpm > 0
-                ? (IsPulsing ? new SolidColorBrush(Color.FromArgb(210, 0, 210, 255)) : new SolidColorBrush(Color.FromArgb(190, 226, 232, 240)))
-                : new SolidColorBrush(Color.FromArgb(75, 100, 116, 139));
+            dc.DrawEllipse(
+                new SolidColorBrush(Color.FromArgb(220, 12, 15, 20)),
+                new Pen(new SolidColorBrush(Color.FromRgb(42, 50, 64)), 2.2),
+                new Point(cx, cy), r, r);
 
-            int blades = 7;
-            double bladeLen = r * 0.74;
+            if (spinning && dutyPercent > 1)
+            {
+                double sweep = Math.Min(359.0, Math.Max(45.0, (dutyPercent / 100.0) * 359.0));
+                var arcGeom = CreateArcGeometry(cx, cy, r - 1.2, -90, -90 + sweep);
+                dc.DrawGeometry(null, new Pen(new SolidColorBrush(primaryGlow), 2.4), arcGeom);
+            }
+
+            dc.PushTransform(new RotateTransform(angleDeg, cx, cy));
+            var bladeBrush = spinning
+                ? new LinearGradientBrush(
+                    Color.FromArgb(220, 200, 212, 226),
+                    Color.FromArgb(145, primaryGlow.R, primaryGlow.G, primaryGlow.B),
+                    new Point(0, 0), new Point(1, 1))
+                : (Brush)new SolidColorBrush(Color.FromArgb(70, 100, 116, 139));
+
+            int blades = 9;
+            double bladeLen = r * 0.78;
             for (int i = 0; i < blades; i++)
             {
                 dc.PushTransform(new RotateTransform(i * (360.0 / blades), cx, cy));
                 var sg = new StreamGeometry();
                 using (var ctx = sg.Open())
                 {
-                    ctx.BeginFigure(new Point(cx, cy - 3), true, true);
-                    ctx.QuadraticBezierTo(new Point(cx + 6, cy - bladeLen * 0.65), new Point(cx + 2, cy - bladeLen), true, false);
-                    ctx.QuadraticBezierTo(new Point(cx - 4, cy - bladeLen * 0.8), new Point(cx - 2, cy - 3), true, false);
+                    ctx.BeginFigure(new Point(cx, cy - r * 0.22), true, true);
+                    ctx.QuadraticBezierTo(new Point(cx + r * 0.28, cy - bladeLen * 0.62), new Point(cx + r * 0.08, cy - bladeLen), true, false);
+                    ctx.QuadraticBezierTo(new Point(cx - r * 0.16, cy - bladeLen * 0.82), new Point(cx - r * 0.09, cy - r * 0.22), true, false);
                 }
                 sg.Freeze();
                 dc.DrawGeometry(bladeBrush, null, sg);
@@ -106,7 +133,10 @@ namespace HyteFlow
             }
             dc.Pop();
 
-            dc.DrawEllipse(StudioTheme.BgCard, new Pen(accentBrush, 1.5), new Point(cx, cy), r * 0.28, r * 0.28);
+            double hubR = r * 0.30;
+            var hubGrad = new RadialGradientBrush(Color.FromRgb(75, 85, 102), Color.FromRgb(24, 29, 38));
+            dc.DrawEllipse(hubGrad, new Pen(new SolidColorBrush(primaryGlow), 1.3), new Point(cx, cy), hubR, hubR);
+            dc.DrawEllipse(new SolidColorBrush(Color.FromRgb(12, 15, 20)), null, new Point(cx, cy), hubR * 0.35, hubR * 0.35);
         }
 
         public static StreamGeometry CreateArcGeometry(double cx, double cy, double r, double startAngleDeg, double endAngleDeg)
@@ -131,28 +161,51 @@ namespace HyteFlow
     public class HyteY70BlueprintControl : FrameworkElement
     {
         private readonly HardwareEngine _engine;
-        private readonly Dictionary<ChassisZone, Rect> _zoneRects = new Dictionary<ChassisZone, Rect>();
+        private readonly Dictionary<ChassisZone, Rect> _zoneHitRects = new Dictionary<ChassisZone, Rect>();
         private ChassisZone? _hoveredZone;
+        private BitmapSource _caseBitmap;
+        private CaseModelDefinition _currentCaseModel;
 
         public ChassisZone? SelectedZoneFilter { get; set; }
         public double RotorAngle { get; set; }
+        public bool WireframeOrbitMode { get; set; } = false;
 
         public event Action<ChassisZone> ZoneClicked;
+
+        public CaseModelDefinition CurrentCaseModel
+        {
+            get => _currentCaseModel;
+            set
+            {
+                _currentCaseModel = value ?? CaseCatalog.Presets[0];
+                _caseBitmap = CaseCatalog.LoadCaseImage(_currentCaseModel);
+                InvalidateVisual();
+            }
+        }
 
         public HyteY70BlueprintControl(HardwareEngine engine)
         {
             _engine = engine;
+            CurrentCaseModel = CaseCatalog.Presets.FirstOrDefault(p => p.Id == (_engine.Config.ChassisPreset ?? "hyte-y70"))
+                               ?? CaseCatalog.Presets[0];
+
             Cursor = Cursors.Hand;
             MouseMove += OnMouseMove;
             MouseLeave += (s, e) => { _hoveredZone = null; InvalidateVisual(); };
             MouseLeftButtonDown += OnMouseLeftButtonDown;
         }
 
+        public void ReloadCaseBitmap()
+        {
+            _caseBitmap = CaseCatalog.LoadCaseImage(_currentCaseModel);
+            InvalidateVisual();
+        }
+
         private void OnMouseMove(object sender, MouseEventArgs e)
         {
             Point pt = e.GetPosition(this);
             ChassisZone? hit = null;
-            foreach (var kv in _zoneRects)
+            foreach (var kv in _zoneHitRects)
             {
                 if (kv.Value.Contains(pt))
                 {
@@ -170,7 +223,7 @@ namespace HyteFlow
         private void OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             Point pt = e.GetPosition(this);
-            foreach (var kv in _zoneRects)
+            foreach (var kv in _zoneHitRects)
             {
                 if (kv.Value.Contains(pt))
                 {
@@ -186,138 +239,257 @@ namespace HyteFlow
             double h = ActualHeight;
             if (w < 100 || h < 100) return;
 
-            _zoneRects.Clear();
+            _zoneHitRects.Clear();
 
             dc.DrawRoundedRectangle(
-                new SolidColorBrush(Color.FromRgb(12, 15, 20)),
+                new SolidColorBrush(Color.FromRgb(11, 13, 18)),
                 new Pen(StudioTheme.BorderBrush, 1.0),
                 new Rect(0, 0, w, h), 8, 8);
 
-            var gridPen = new Pen(new SolidColorBrush(Color.FromArgb(18, 148, 163, 184)), 1.0);
-            for (double gx = 24; gx < w; gx += 24)
-                dc.DrawLine(gridPen, new Point(gx, 0), new Point(gx, h));
-            for (double gy = 24; gy < h; gy += 24)
-                dc.DrawLine(gridPen, new Point(0, gy), new Point(w, gy));
+            double stagePadTop = 24;
+            double stageW = w - 12;
+            double stageH = h - stagePadTop - 6;
+            Rect stageRect = new Rect(6, stagePadTop, stageW, stageH);
 
-            double padX = 16;
-            double padY = 28;
-            double caseW = w - padX * 2;
-            double caseH = h - padY - 12;
-
-            Rect caseRect = new Rect(padX, padY, caseW, caseH);
-            dc.DrawRoundedRectangle(
-                new SolidColorBrush(Color.FromArgb(180, 16, 20, 26)),
-                new Pen(new SolidColorBrush(Color.FromRgb(56, 66, 82)), 2.0),
-                caseRect, 6, 6);
-
-            DrawText(dc, "HYTE Y70 DUAL-CHAMBER TOPOLOGY  •  CLICK ANY ZONE TO FILTER / ASSIGN",
-                padX + 2, 8, 10.0, StudioTheme.FontMono, StudioTheme.TextMuted);
-
-            Rect topRect = new Rect(padX + caseW * 0.20, padY + 8, caseW * 0.55, caseH * 0.22);
-            Rect sideRect = new Rect(padX + caseW * 0.77, padY + 10, caseW * 0.21, caseH * 0.84);
-            Rect botRect = new Rect(padX + caseW * 0.20, padY + caseH * 0.75, caseW * 0.55, caseH * 0.22);
-            Rect rearRect = new Rect(padX + 8, padY + caseH * 0.20, caseW * 0.17, caseH * 0.36);
-            Rect cpuRect = new Rect(padX + caseW * 0.27, padY + caseH * 0.32, caseW * 0.42, caseH * 0.20);
-            Rect gpuRect = new Rect(padX + caseW * 0.22, padY + caseH * 0.54, caseW * 0.51, caseH * 0.19);
-
-            _zoneRects[ChassisZone.Top] = topRect;
-            _zoneRects[ChassisZone.Side] = sideRect;
-            _zoneRects[ChassisZone.Bottom] = botRect;
-            _zoneRects[ChassisZone.Rear] = rearRect;
-            _zoneRects[ChassisZone.CpuAio] = cpuRect;
-            _zoneRects[ChassisZone.Gpu] = gpuRect;
-
-            DrawZoneBox(dc, ChassisZone.Top, topRect, "TOP EXHAUST / 360 RAD", 3, true);
-            DrawZoneBox(dc, ChassisZone.Side, sideRect, "SIDE M/B INTAKE", 3, false);
-            DrawZoneBox(dc, ChassisZone.Bottom, botRect, "BOTTOM COLD-FLOOR", 3, true);
-            DrawZoneBox(dc, ChassisZone.Rear, rearRect, "REAR EXHAUST", 1, false);
-            DrawZoneBox(dc, ChassisZone.CpuAio, cpuRect, $"CPU / AIO  ({_engine.CpuTempC:0}°C)", 2, true);
-            DrawZoneBox(dc, ChassisZone.Gpu, gpuRect, $"RTX 5080 VERTICAL  ({_engine.GpuCoreTempC:0}°C)", 2, true);
-        }
-
-        private void DrawZoneBox(DrawingContext dc, ChassisZone zone, Rect rect, string title, int slotCount, bool horizontalSlots)
-        {
-            var zoneChannels = _engine.Channels.Where(c => c.Zone == zone).ToList();
-            bool hasPulsing = zoneChannels.Any(c => c.IsPulsing);
-            bool isSelected = SelectedZoneFilter == zone;
-            bool isHovered = _hoveredZone == zone;
-
-            int totalFans = zoneChannels.Sum(c => c.PhysicalFanCount);
-            int avgRpm = zoneChannels.Any(c => c.IsSpinning)
-                ? (int)Math.Round(zoneChannels.Where(c => c.IsSpinning).Average(c => c.CurrentRpm))
-                : 0;
-            double avgDuty = zoneChannels.Any()
-                ? zoneChannels.Average(c => c.CurrentDutyPercent)
-                : 0;
-
-            Color borderCol = hasPulsing ? StudioTheme.AccentCyanColor :
-                              isSelected ? StudioTheme.AccentOrangeColor :
-                              isHovered ? Color.FromRgb(148, 163, 184) :
-                              (avgRpm > 0 ? Color.FromRgb(45, 72, 95) : StudioTheme.BorderColor);
-
-            Color fillCol = hasPulsing ? Color.FromArgb(45, 0, 210, 255) :
-                            isSelected ? Color.FromArgb(35, 255, 107, 43) :
-                            isHovered ? Color.FromArgb(35, 51, 65, 85) :
-                            Color.FromArgb(190, 20, 25, 33);
-
-            dc.DrawRoundedRectangle(
-                new SolidColorBrush(fillCol),
-                new Pen(new SolidColorBrush(borderCol), isSelected || hasPulsing ? 2.0 : 1.2),
-                rect, 6, 6);
-
-            double rotorRadius = Math.Min(rect.Width, rect.Height) * 0.22;
-            rotorRadius = Math.Max(9, Math.Min(16, rotorRadius));
-
-            for (int i = 0; i < slotCount; i++)
+            if (_caseBitmap != null && !WireframeOrbitMode)
             {
-                double fx, fy;
-                if (horizontalSlots)
+                dc.PushClip(new RectangleGeometry(new Rect(1, 1, w - 2, h - 2), 7, 7));
+
+                double imgAspect = _caseBitmap.PixelWidth / (double)Math.Max(1, _caseBitmap.PixelHeight);
+                double boxAspect = stageW / Math.Max(1, stageH);
+                Rect imgRect;
+                if (boxAspect > imgAspect)
                 {
-                    double step = rect.Width / (slotCount + 1);
-                    fx = rect.Left + step * (i + 1);
-                    fy = rect.Top + rect.Height * 0.50;
+                    double drawH = stageH * 1.04;
+                    double drawW = drawH * imgAspect;
+                    imgRect = new Rect(stageRect.Left + (stageW - drawW) / 2.0, stageRect.Top - stageH * 0.02, drawW, drawH);
                 }
                 else
                 {
-                    double step = rect.Height / (slotCount + 1);
-                    fx = rect.Left + rect.Width * 0.35;
-                    fy = rect.Top + step * (i + 1);
+                    double drawW = stageW * 1.04;
+                    double drawH = drawW / imgAspect;
+                    imgRect = new Rect(stageRect.Left - stageW * 0.02, stageRect.Top + (stageH - drawH) / 2.0, drawW, drawH);
                 }
-                DrawMiniRotor(dc, fx, fy, rotorRadius, avgRpm > 0, hasPulsing);
+
+                dc.DrawImage(_caseBitmap, imgRect);
+                dc.Pop();
+            }
+            else
+            {
+                DrawProcedural3DCaseHull(dc, stageRect);
             }
 
-            var titleBrush = hasPulsing ? StudioTheme.AccentCyan :
-                             isSelected ? StudioTheme.AccentOrange : StudioTheme.TextPrimary;
-            DrawText(dc, title, rect.Left + 8, rect.Top + 5, 10.0, StudioTheme.FontUIBold, titleBrush);
+            DrawText(dc, $"3D STUDIO: {_currentCaseModel.DisplayName.Split('(')[0].Trim().ToUpperInvariant()}  •  CLICK ANY 3D ZONE TO ASSIGN OR FILTER",
+                12, 5, 9.2, StudioTheme.FontMono, StudioTheme.TextMuted);
 
-            string bottomStat = zoneChannels.Count == 0
-                ? "UNMAPPED"
-                : (rect.Width < 130
-                    ? $"{totalFans}x • {avgRpm} RPM"
-                    : $"{totalFans}x FANS • {avgRpm} RPM ({avgDuty:0}%)");
+            GetZoneStats(ChassisZone.Top, out int topFans, out int topRpm, out double topDuty, out bool topPulse);
+            GetZoneStats(ChassisZone.Side, out int sideFans, out int sideRpm, out double sideDuty, out bool sidePulse);
+            GetZoneStats(ChassisZone.Bottom, out int botFans, out int botRpm, out double botDuty, out bool botPulse);
+            GetZoneStats(ChassisZone.Rear, out int rearFans, out int rearRpm, out double rearDuty, out bool rearPulse);
+            GetZoneStats(ChassisZone.CpuAio, out int cpuFans, out int cpuRpm, out double cpuDuty, out bool cpuPulse);
+            GetZoneStats(ChassisZone.Gpu, out int gpuFans, out int gpuRpm, out double gpuDuty, out bool gpuPulse);
 
-            var statBrush = avgRpm > 0 ? StudioTheme.AccentGreen : StudioTheme.TextDim;
-            if (hasPulsing) statBrush = StudioTheme.AccentCyan;
-            DrawText(dc, bottomStat, rect.Left + 8, rect.Bottom - 16, 9.5, StudioTheme.FontMono, statBrush);
+            double rBase = Math.Min(w, h) * 0.068;
+
+            Point sideP1 = MapPt(w, h, 0.625, 0.30);
+            Point sideP2 = MapPt(w, h, 0.625, 0.44);
+            Point sideP3 = MapPt(w, h, 0.625, 0.58);
+            Draw3DPerspectiveTurbine(dc, sideP1, rBase * 0.88, 0.62, 0.96, -5, RotorAngle, sideRpm, sideDuty, sidePulse, true);
+            Draw3DPerspectiveTurbine(dc, sideP2, rBase * 0.88, 0.62, 0.96, -5, RotorAngle + 40, sideRpm, sideDuty, sidePulse, true);
+            Draw3DPerspectiveTurbine(dc, sideP3, rBase * 0.88, 0.62, 0.96, -5, RotorAngle + 80, sideRpm, sideDuty, sidePulse, true);
+
+            Point topP1 = MapPt(w, h, 0.36, 0.175);
+            Point topP2 = MapPt(w, h, 0.45, 0.182);
+            Point topP3 = MapPt(w, h, 0.54, 0.189);
+            Draw3DPerspectiveTurbine(dc, topP1, rBase * 0.92, 0.98, 0.42, 4, RotorAngle, topRpm, topDuty, topPulse, false);
+            Draw3DPerspectiveTurbine(dc, topP2, rBase * 0.92, 0.98, 0.42, 4, RotorAngle + 30, topRpm, topDuty, topPulse, false);
+            Draw3DPerspectiveTurbine(dc, topP3, rBase * 0.92, 0.98, 0.42, 4, RotorAngle + 60, topRpm, topDuty, topPulse, false);
+
+            Point botP1 = MapPt(w, h, 0.36, 0.745);
+            Point botP2 = MapPt(w, h, 0.45, 0.770);
+            Point botP3 = MapPt(w, h, 0.54, 0.795);
+            Draw3DPerspectiveTurbine(dc, botP1, rBase * 0.92, 0.98, 0.38, 11, RotorAngle, botRpm, botDuty, botPulse, true);
+            Draw3DPerspectiveTurbine(dc, botP2, rBase * 0.92, 0.98, 0.38, 11, RotorAngle + 25, botRpm, botDuty, botPulse, true);
+            Draw3DPerspectiveTurbine(dc, botP3, rBase * 0.92, 0.98, 0.38, 11, RotorAngle + 50, botRpm, botDuty, botPulse, true);
+
+            Point rearCenter = MapPt(w, h, 0.305, 0.345);
+            Draw3DPerspectiveTurbine(dc, rearCenter, rBase * 1.05, 0.58, 0.98, -6, RotorAngle, rearRpm, rearDuty, rearPulse, false);
+
+            Point cpuCenter = MapPt(w, h, 0.455, 0.375);
+            Draw3DAioPumpBlock(dc, cpuCenter, topP3, rBase * 0.85, _engine.CpuTempC, cpuRpm, cpuPulse);
+
+            Point gpuCenter = MapPt(w, h, 0.445, 0.585);
+            Draw3DVerticalGpuCard(dc, gpuCenter, rBase * 2.2, rBase * 0.95, _engine.GpuCoreTempC, gpuRpm, gpuDuty, gpuPulse);
+
+            DrawZoneHudBadge(dc, ChassisZone.Top, new Rect(w * 0.31, h * 0.088, w * 0.36, 26), topP2, "TOP 360 RAD", topFans, topRpm, topDuty, topPulse, false);
+            DrawZoneHudBadge(dc, ChassisZone.Side, new Rect(w * 0.68, h * 0.41, w * 0.30, 38), sideP2, "SIDE INTAKE", sideFans, sideRpm, sideDuty, sidePulse, true);
+            DrawZoneHudBadge(dc, ChassisZone.Bottom, new Rect(w * 0.30, h * 0.86, w * 0.40, 26), botP2, "COLD-FLOOR", botFans, botRpm, botDuty, botPulse, true);
+            DrawZoneHudBadge(dc, ChassisZone.Rear, new Rect(w * 0.02, h * 0.28, w * 0.25, 38), rearCenter, "REAR EXHAUST", rearFans, rearRpm, rearDuty, rearPulse, false);
+            DrawZoneHudBadge(dc, ChassisZone.CpuAio, new Rect(w * 0.02, h * 0.45, w * 0.25, 38), cpuCenter, $"CPU AIO ({_engine.CpuTempC:0}°C)", cpuFans, cpuRpm, cpuDuty, cpuPulse, false);
+            DrawZoneHudBadge(dc, ChassisZone.Gpu, new Rect(w * 0.02, h * 0.62, w * 0.25, 38), gpuCenter, $"RTX 5080 ({_engine.GpuCoreTempC:0}°C)", gpuFans, gpuRpm, gpuDuty, gpuPulse, true);
         }
 
-        private void DrawMiniRotor(DrawingContext dc, double cx, double cy, double r, bool spinning, bool pulsing)
-        {
-            var ringColor = pulsing ? StudioTheme.AccentCyanColor :
-                            spinning ? Color.FromRgb(56, 189, 248) : Color.FromRgb(45, 55, 72);
-            dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(140, 10, 12, 16)), new Pen(new SolidColorBrush(ringColor), 1.2), new Point(cx, cy), r, r);
+        private static Point MapPt(double w, double h, double nx, double ny)
+            => new Point(w * nx, h * ny);
 
-            double angle = spinning ? RotorAngle : 0;
-            dc.PushTransform(new RotateTransform(angle, cx, cy));
-            var bladePen = new Pen(new SolidColorBrush(spinning ? ringColor : Color.FromRgb(60, 70, 85)), 1.5);
-            for (int b = 0; b < 4; b++)
-            {
-                double rad = b * Math.PI / 2.0;
-                dc.DrawLine(bladePen,
-                    new Point(cx - Math.Cos(rad) * r * 0.7, cy - Math.Sin(rad) * r * 0.7),
-                    new Point(cx + Math.Cos(rad) * r * 0.7, cy + Math.Sin(rad) * r * 0.7));
-            }
+        private void Draw3DPerspectiveTurbine(
+            DrawingContext dc,
+            Point center,
+            double radius,
+            double scaleX,
+            double scaleY,
+            double tiltDeg,
+            double bladeAngle,
+            int rpm,
+            double duty,
+            bool isPulsing,
+            bool isIntakeCyan)
+        {
+            var tg = new TransformGroup();
+            tg.Children.Add(new TranslateTransform(-center.X, -center.Y));
+            tg.Children.Add(new ScaleTransform(scaleX, scaleY));
+            tg.Children.Add(new RotateTransform(tiltDeg));
+            tg.Children.Add(new TranslateTransform(center.X, center.Y));
+
+            dc.PushTransform(tg);
+            SpinningFanControl.DrawTurbine(dc, center.X, center.Y, radius, bladeAngle, rpm, duty, isPulsing, isIntakeCyan);
             dc.Pop();
+        }
+
+        private void Draw3DAioPumpBlock(DrawingContext dc, Point center, Point radTarget, double radius, double cpuTemp, int rpm, bool pulsing)
+        {
+            var tubePenOuter = new Pen(new SolidColorBrush(Color.FromRgb(28, 34, 44)), 5.0);
+            var tubePenHighlight = new Pen(new SolidColorBrush(Color.FromArgb(120, 0, 210, 255)), 1.5);
+            var tubeGeom = new StreamGeometry();
+            using (var ctx = tubeGeom.Open())
+            {
+                ctx.BeginFigure(new Point(center.X + radius * 0.6, center.Y - radius * 0.2), false, false);
+                ctx.BezierTo(
+                    new Point(center.X + radius * 2.2, center.Y - radius * 0.8),
+                    new Point(radTarget.X + radius * 1.2, radTarget.Y + radius * 1.4),
+                    new Point(radTarget.X, radTarget.Y + 4),
+                    true, false);
+            }
+            tubeGeom.Freeze();
+            dc.DrawGeometry(null, tubePenOuter, tubeGeom);
+            dc.DrawGeometry(null, tubePenHighlight, tubeGeom);
+
+            Color ringCol = pulsing ? StudioTheme.AccentCyanColor : StudioTheme.AccentOrangeColor;
+            dc.DrawEllipse(
+                new SolidColorBrush(Color.FromRgb(10, 13, 18)),
+                new Pen(new SolidColorBrush(ringCol), 2.5),
+                center, radius, radius);
+            dc.DrawEllipse(
+                null,
+                new Pen(new SolidColorBrush(Color.FromArgb(160, 0, 210, 255)), 1.5) { DashStyle = DashStyles.Dash },
+                center, radius * 0.80, radius * 0.80);
+
+            DrawText(dc, $"{cpuTemp:0}°C", center.X - 15, center.Y - 9, 11.0, StudioTheme.FontMono, StudioTheme.TextPrimary);
+            DrawText(dc, "AIO LCD", center.X - 16, center.Y + 4, 7.5, StudioTheme.FontMono, StudioTheme.AccentCyan);
+        }
+
+        private void Draw3DVerticalGpuCard(DrawingContext dc, Point center, double halfW, double halfH, double gpuTemp, int rpm, double duty, bool pulsing)
+        {
+            dc.PushTransform(new SkewTransform(0, 6, center.X, center.Y));
+
+            Rect cardRect = new Rect(center.X - halfW, center.Y - halfH, halfW * 2, halfH * 2);
+            var shroudGrad = new LinearGradientBrush(
+                Color.FromArgb(230, 24, 29, 38),
+                Color.FromArgb(235, 13, 16, 22),
+                new Point(0, 0), new Point(0, 1));
+            Color borderCol = pulsing ? StudioTheme.AccentCyanColor : Color.FromRgb(64, 76, 94);
+
+            dc.DrawRoundedRectangle(shroudGrad, new Pen(new SolidColorBrush(borderCol), 1.8), cardRect, 6, 6);
+
+            Rect ledBar = new Rect(cardRect.Left + 10, cardRect.Top + 3, cardRect.Width - 20, 4);
+            dc.DrawRoundedRectangle(StudioTheme.AccentCyan, null, ledBar, 2, 2);
+
+            double fanR = halfH * 0.68;
+            for (int i = -1; i <= 1; i++)
+            {
+                double fx = center.X + i * (halfW * 0.62);
+                double fy = center.Y + 3;
+                SpinningFanControl.DrawTurbine(dc, fx, fy, fanR, RotorAngle * (i == 0 ? -1 : 1), rpm, duty, pulsing, true);
+            }
+
+            dc.Pop();
+        }
+
+        private void DrawZoneHudBadge(
+            DrawingContext dc,
+            ChassisZone zone,
+            Rect badgeRect,
+            Point target3DPoint,
+            string title,
+            int fanCount,
+            int avgRpm,
+            double avgDuty,
+            bool isPulsing,
+            bool isRightOrBottom)
+        {
+            _zoneHitRects[zone] = badgeRect;
+
+            bool isSelected = SelectedZoneFilter == zone;
+            bool isHovered = _hoveredZone == zone;
+
+            Color accent = isPulsing ? StudioTheme.AccentCyanColor :
+                           isSelected ? StudioTheme.AccentOrangeColor :
+                           isHovered ? Color.FromRgb(180, 195, 215) :
+                           (avgRpm > 0 ? Color.FromRgb(0, 210, 255) : Color.FromRgb(70, 82, 100));
+
+            Point pillAnchor = new Point(
+                badgeRect.Left + badgeRect.Width / 2.0,
+                badgeRect.Top + badgeRect.Height / 2.0);
+            var leaderPen = new Pen(new SolidColorBrush(Color.FromArgb(isSelected || isHovered || isPulsing ? (byte)190 : (byte)95, accent.R, accent.G, accent.B)), 1.2);
+            dc.DrawLine(leaderPen, pillAnchor, target3DPoint);
+            dc.DrawEllipse(new SolidColorBrush(accent), null, target3DPoint, 3.0, 3.0);
+
+            var bgFill = new SolidColorBrush(
+                isPulsing ? Color.FromArgb(225, 8, 38, 52) :
+                isSelected ? Color.FromArgb(230, 42, 22, 14) :
+                Color.FromArgb(215, 13, 17, 23));
+
+            dc.DrawRoundedRectangle(bgFill, new Pen(new SolidColorBrush(accent), isSelected || isPulsing ? 1.8 : 1.1), badgeRect, 5, 5);
+
+            string stats = fanCount > 0 ? $"{fanCount}x • {avgRpm} RPM" : "CLICK TO MAP";
+            if (badgeRect.Height <= 30)
+            {
+                DrawText(dc, $"{title}: {stats} ({avgDuty:0}%)", badgeRect.Left + 8, badgeRect.Top + 6, 9.5, StudioTheme.FontMono, StudioTheme.TextPrimary);
+            }
+            else
+            {
+                DrawText(dc, title, badgeRect.Left + 7, badgeRect.Top + 4, 9.5, StudioTheme.FontUIBold,
+                    isSelected ? StudioTheme.AccentOrange : StudioTheme.TextPrimary);
+                DrawText(dc, stats, badgeRect.Left + 7, badgeRect.Top + 19, 9.2, StudioTheme.FontMono,
+                    avgRpm > 0 ? StudioTheme.AccentGreen : StudioTheme.TextDim);
+            }
+        }
+
+        private void DrawProcedural3DCaseHull(DrawingContext dc, Rect stage)
+        {
+            var wirePen = new Pen(new SolidColorBrush(Color.FromRgb(56, 72, 96)), 1.6);
+            double cx = stage.Left + stage.Width * 0.48;
+            double cy = stage.Top + stage.Height * 0.50;
+            double w = stage.Width * 0.52;
+            double h = stage.Height * 0.72;
+
+            Point tl = new Point(cx - w * 0.48, cy - h * 0.48);
+            Point tr = new Point(cx + w * 0.48, cy - h * 0.44);
+            Point br = new Point(cx + w * 0.48, cy + h * 0.46);
+            Point bl = new Point(cx - w * 0.48, cy + h * 0.42);
+            dc.DrawLine(wirePen, tl, tr);
+            dc.DrawLine(wirePen, tr, br);
+            dc.DrawLine(wirePen, br, bl);
+            dc.DrawLine(wirePen, bl, tl);
+        }
+
+        private void GetZoneStats(ChassisZone zone, out int totalFans, out int avgRpm, out double avgDuty, out bool hasPulsing)
+        {
+            var list = _engine.Channels.Where(c => c.Zone == zone).ToList();
+            totalFans = list.Sum(c => c.PhysicalFanCount);
+            avgRpm = list.Any(c => c.IsSpinning) ? (int)Math.Round(list.Where(c => c.IsSpinning).Average(c => c.CurrentRpm)) : 0;
+            avgDuty = list.Any() ? list.Average(c => c.CurrentDutyPercent) : 0;
+            hasPulsing = list.Any(c => c.IsPulsing);
         }
 
         private static void DrawText(DrawingContext dc, string text, double x, double y, double size, Typeface face, Brush brush)
