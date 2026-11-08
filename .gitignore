@@ -1,0 +1,4 @@
+*.log
+*.pdb
+*.xml
+*.hyteflow_backup.json
