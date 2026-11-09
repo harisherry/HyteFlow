@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 
-$csc = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\Roslyn\csc.exe"
+$csc = "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\Roslyn\csc.exe"
+if (-not (Test-Path $csc)) { $csc = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\Roslyn\csc.exe" }
 if (-not (Test-Path $csc)) {
     $csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 }

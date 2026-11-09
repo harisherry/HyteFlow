@@ -48,17 +48,20 @@ namespace HyteFlow
         public int FanSizeMm { get; set; } = 120;
         public FanControlMode Mode { get; set; } = FanControlMode.SmartCurve;
         public double ManualDutyPercent { get; set; } = 50;
-        public string TempSourceId { get; set; } = "CPU_MAX";
+        public string TempSourceId { get; set; } = "MAX_CPU_GPU";
         public bool ForcePinVisible { get; set; } = false;
+        public bool IsVirtual { get; set; } = false;
+        public string SyncedMasterChannelId { get; set; }
         public List<CurvePoint> CurvePoints { get; set; } = new List<CurvePoint>();
     }
 
     public class AppConfig
     {
-        public string ChassisPreset { get; set; } = "HYTE Y70 Dual-Chamber";
+        public string ChassisPreset { get; set; } = "thermalright_tl_m10_vision";
         public bool StartWithWindows { get; set; } = false;
         public bool StartMinimized { get; set; } = false;
         public bool ShowEmptyHeaders { get; set; } = false;
+        public bool UseProcedural3D { get; set; } = false;
         public double HysteresisC { get; set; } = 3.0;
         public double MaxStepPerSec { get; set; } = 12.0;
         public FanControlMode GlobalPreset { get; set; } = FanControlMode.SmartCurve;
@@ -90,7 +93,7 @@ namespace HyteFlow
         private int _physicalFanCount = 1;
         private int _fanSizeMm = 120;
         private int _currentRpm;
-        private int _maxObservedRpm = 2000;
+        private int _maxObservedRpm = 2200;
         private double _currentDutyPercent = 50;
         private double _targetDutyPercent = 50;
         private double _manualDutyPercent = 50;
@@ -98,14 +101,21 @@ namespace HyteFlow
         private bool _isPulsing;
         private int _pulseSecondsRemaining;
         private int _pulseBaselineRpm;
-        private string _tempSourceId = "CPU_MAX";
+        private string _tempSourceId = "MAX_CPU_GPU";
         private bool _forcePinVisible;
+        private bool _isVirtual;
 
         public string Id { get; set; }
         public string HeaderName { get; set; }
         public string HardwareOrigin { get; set; }
         public string ControllerType { get; set; }
         public bool SupportsControl { get; set; } = true;
+
+        public bool IsVirtual
+        {
+            get => _isVirtual;
+            set { _isVirtual = value; OnPropertyChanged(); }
+        }
 
         public string Nickname
         {
@@ -206,9 +216,9 @@ namespace HyteFlow
 
         public List<CurvePoint> CurvePoints { get; set; } = new List<CurvePoint>();
 
-        public bool IsSpinning => _currentRpm > 50;
+        public bool IsSpinning => _currentRpm > 50 || _isVirtual;
 
-        public string TopologyLabel => $"{PhysicalFanCount}x {FanSizeMm}mm" + (PhysicalFanCount > 1 ? " (Daisy/Splitter)" : "");
+        public string TopologyLabel => $"{PhysicalFanCount}× {FanSizeMm}mm" + (PhysicalFanCount > 1 ? " Daisy-Chain" : " Fan");
 
         public string ZoneLabel
         {
@@ -218,9 +228,9 @@ namespace HyteFlow
                 {
                     case ChassisZone.Top: return "TOP RADIATOR / EXHAUST";
                     case ChassisZone.Side: return "SIDE M/B TRAY INTAKE";
-                    case ChassisZone.Bottom: return "BOTTOM COLD-FLOOR INTAKE";
+                    case ChassisZone.Bottom: return "BOTTOM SHROUD INTAKE";
                     case ChassisZone.Rear: return "REAR EXHAUST";
-                    case ChassisZone.CpuAio: return "CPU / AIO PUMP";
+                    case ChassisZone.CpuAio: return "CPU / AIO COOLER";
                     case ChassisZone.Gpu: return "GPU COOLING SHROUD";
                     default: return "UNASSIGNED HEADER";
                 }
@@ -255,13 +265,13 @@ namespace HyteFlow
             {
                 switch (Mode)
                 {
-                    case FanControlMode.SmartCurve: return "SMART CURVE";
-                    case FanControlMode.ManualFixed: return $"MANUAL ({ManualDutyPercent:0}%)";
-                    case FanControlMode.Silent: return "SILENT PRESET";
-                    case FanControlMode.Balanced: return "BALANCED PRESET";
-                    case FanControlMode.Performance: return "PERFORMANCE";
-                    case FanControlMode.FullBlast: return "100% MAX BLAST";
-                    default: return "AUTO";
+                    case FanControlMode.SmartCurve: return "Smart Curve";
+                    case FanControlMode.ManualFixed: return $"Manual ({ManualDutyPercent:0}%)";
+                    case FanControlMode.Silent: return "Silent Profile";
+                    case FanControlMode.Balanced: return "Balanced Profile";
+                    case FanControlMode.Performance: return "Performance";
+                    case FanControlMode.FullBlast: return "100% Max Blast";
+                    default: return "Auto";
                 }
             }
         }
@@ -270,10 +280,10 @@ namespace HyteFlow
         {
             get
             {
-                if (IsPulsing) return $"LOCATING ({PulseSecondsRemaining}s)";
-                if (CurrentRpm > 0) return $"{CurrentRpm} RPM";
-                if (ControllerType == "GPU Controller") return "0 RPM (ZERO-RPM)";
-                return "0 RPM (IDLE)";
+                if (IsPulsing) return $"Locating ({PulseSecondsRemaining}s)";
+                if (CurrentRpm > 0) return $"{CurrentRpm:N0} RPM";
+                if (ControllerType == "GPU Controller") return "Zero-RPM Idle";
+                return "0 RPM (Idle)";
             }
         }
 

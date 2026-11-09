@@ -63,11 +63,11 @@ namespace HyteFlow
         public string MotherboardName { get; private set; } = "Motherboard";
         public string CpuName { get; private set; } = "CPU";
         public string GpuName { get; private set; } = "GPU";
-        public string SuperIoChipName { get; private set; } = "ITE Super I/O";
+        public string SuperIoChipName { get; private set; } = "Super I/O";
         public bool IsSuperIoUnlocked { get; private set; }
         public bool IsAdmin { get; private set; }
 
-        public double CpuTempC { get; private set; } = 42.0;
+        public double CpuTempC { get; private set; } = 44.0;
         public double GpuCoreTempC { get; private set; } = 40.0;
         public double GpuMemTempC { get; private set; } = 48.0;
 
@@ -120,6 +120,7 @@ namespace HyteFlow
                         ManualDutyPercent = ch.ManualDutyPercent,
                         TempSourceId = ch.TempSourceId,
                         ForcePinVisible = ch.ForcePinVisible,
+                        IsVirtual = ch.IsVirtual,
                         CurvePoints = ch.CurvePoints.Select(p => new CurvePoint(p.TempC, p.DutyPercent)).ToList()
                     });
                 }
@@ -177,8 +178,13 @@ namespace HyteFlow
                         }
                         else if (hw.HardwareType == HardwareType.GpuNvidia || hw.HardwareType == HardwareType.GpuAmd || hw.HardwareType == HardwareType.GpuIntel)
                         {
-                            if (hw.HardwareType == HardwareType.GpuNvidia || GpuName == "GPU")
+                            bool isDiscrete = hw.Name.IndexOf("RX ", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                              hw.Name.IndexOf("RTX", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                              hw.Name.IndexOf("GTX", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                              hw.Name.IndexOf("Arc", StringComparison.OrdinalIgnoreCase) >= 0;
+                            if (isDiscrete || GpuName == "GPU")
                                 GpuName = hw.Name;
+
                             RegisterLhmTempSensors(hw);
                             RegisterLhmHardwareSensors(hw, hw.Name, "GPU Controller");
                         }
@@ -193,28 +199,29 @@ namespace HyteFlow
                 if (!IsSuperIoUnlocked)
                 {
                     if (string.IsNullOrWhiteSpace(MotherboardName) || MotherboardName == "Unknown" || MotherboardName == "Motherboard")
-                        MotherboardName = "Gigabyte X870 EAGLE WIFI7";
+                        MotherboardName = "Gigabyte B850M GAMING X WIFI6E";
 
-                    SuperIoChipName = "ITE IT8696E (Gigabyte 800-Series)";
+                    SuperIoChipName = "ITE IT8696E";
                     string[] gbHeaders = new[]
                     {
-                        "CPU_FAN (Motherboard Header #1)",
-                        "SYS_FAN1 (Motherboard Header #2)",
-                        "SYS_FAN2 (Motherboard Header #3)",
-                        "SYS_FAN3 (Motherboard Header #4)",
-                        "FAN4_PUMP (Motherboard Header #5)",
-                        "CPU_OPT (Motherboard Header #6)"
+                        "CPU_FAN (Header #1)",
+                        "SYS_FAN1 (Header #2)",
+                        "SYS_FAN2 (Header #3)",
+                        "SYS_FAN3 (Header #4)",
+                        "FAN4_PUMP (Header #5)",
+                        "CPU_OPT (Header #6)"
                     };
+                    int[] fallbackRpms = new[] { 3340, 1065, 0, 960, 0, 0 };
                     for (int i = 0; i < 6; i++)
                     {
-                        string id = $"/lpc/it8696e/control/{i}";
+                        string id = $"/lpc/it8696e/0/control/{i}";
                         var model = CreateOrRestoreChannel(
                             id,
                             gbHeaders[i],
-                            $"{MotherboardName} • ITE IT8696E",
+                            $"{MotherboardName} • {SuperIoChipName}",
                             "Motherboard Super I/O",
                             true,
-                            i == 0 ? 1180 : 0);
+                            fallbackRpms[i]);
                         Channels.Add(model);
                     }
                 }
@@ -249,6 +256,36 @@ namespace HyteFlow
                 }
                 catch { }
 
+                // Restore any user-created custom/virtual fan groups from config
+                foreach (var saved in Config.Channels.Where(c => c.IsVirtual))
+                {
+                    if (Channels.Any(ch => string.Equals(ch.Id, saved.Id, StringComparison.OrdinalIgnoreCase)))
+                        continue;
+
+                    var virtualCh = new FanChannelModel
+                    {
+                        Id = saved.Id,
+                        HeaderName = saved.Nickname ?? "Custom Chassis Fan Group",
+                        Nickname = saved.Nickname ?? "Custom Chassis Fan Group",
+                        HardwareOrigin = "Chassis ARGB / PWM Hub",
+                        ControllerType = "Custom Fan Group",
+                        SupportsControl = true,
+                        IsVirtual = true,
+                        Zone = saved.Zone,
+                        PhysicalFanCount = saved.PhysicalFanCount,
+                        FanSizeMm = saved.FanSizeMm,
+                        Mode = saved.Mode,
+                        ManualDutyPercent = saved.ManualDutyPercent,
+                        TempSourceId = string.IsNullOrEmpty(saved.TempSourceId) ? "MAX_CPU_GPU" : saved.TempSourceId,
+                        ForcePinVisible = true,
+                        CurrentRpm = 1150,
+                        CurvePoints = saved.CurvePoints != null && saved.CurvePoints.Count >= 2
+                            ? saved.CurvePoints
+                            : FanChannelModel.GetDefaultCurve(saved.Zone)
+                    };
+                    Channels.Add(virtualCh);
+                }
+
                 TempSensors.Insert(0, new TempSensorInfo
                 {
                     Id = "MAX_CPU_GPU",
@@ -259,20 +296,254 @@ namespace HyteFlow
                 TempSensors.Insert(1, new TempSensorInfo
                 {
                     Id = "CPU_MAX",
-                    Name = $"CPU Package ({CpuName})",
+                    Name = $"CPU Package ({ShortHardwareLabel(CpuName)})",
                     HardwareName = CpuName,
                     ValueC = CpuTempC
                 });
                 TempSensors.Insert(2, new TempSensorInfo
                 {
                     Id = "GPU_CORE",
-                    Name = $"GPU Core ({GpuName})",
+                    Name = $"GPU Core ({ShortHardwareLabel(GpuName)})",
                     HardwareName = GpuName,
                     ValueC = GpuCoreTempC
                 });
 
-                ApplyInitialHyteY70SmartDefaults();
                 UpdateAll(1.0);
+                AutoDetectAndPlaceInstalledFans(onlyIfUnmapped: true);
+            }
+        }
+
+        public static string ShortHardwareLabel(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return "Sensor";
+            return raw
+                .Replace("AMD ", "")
+                .Replace("NVIDIA ", "")
+                .Replace("GeForce ", "")
+                .Replace("Processor", "")
+                .Replace("Series", "")
+                .Trim();
+        }
+
+        public int AutoDetectAndPlaceInstalledFans(bool onlyIfUnmapped = false)
+        {
+            lock (_syncLock)
+            {
+                bool anyMappedChassisFans = Channels.Any(c =>
+                    c.ControllerType != "GPU Controller" &&
+                    c.Zone != ChassisZone.Unassigned);
+
+                if (onlyIfUnmapped && anyMappedChassisFans)
+                {
+                    // Even if already mapped, fix stale GPU nickname if it says RTX 5080 on an AMD GPU
+                    foreach (var gch in Channels.Where(c => c.ControllerType == "GPU Controller"))
+                    {
+                        if (gch.Nickname.IndexOf("RTX 5080", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                            GpuName.IndexOf("5080", StringComparison.OrdinalIgnoreCase) < 0)
+                        {
+                            gch.Nickname = $"{ShortHardwareLabel(GpuName)} Cooling Shroud";
+                        }
+                    }
+                    return 0;
+                }
+
+                int mappedCount = 0;
+
+                // 1. Map GPU fans directly to GPU zone with accurate GPU name & fan count
+                foreach (var ch in Channels.Where(c => c.ControllerType == "GPU Controller"))
+                {
+                    ch.Zone = ChassisZone.Gpu;
+                    ch.Nickname = $"{ShortHardwareLabel(GpuName)} Cooling Shroud";
+                    if (ch.PhysicalFanCount <= 1) ch.PhysicalFanCount = 3; // Modern triple-fan GPU shroud
+                    ch.FanSizeMm = 100;
+                    ch.ForcePinVisible = true;
+                    ch.TempSourceId = "GPU_CORE";
+                    mappedCount++;
+                }
+
+                // 2. Find all active/spinning non-GPU headers (or primary headers if none spinning)
+                var activeHeaders = Channels
+                    .Where(c => c.ControllerType != "GPU Controller" && (c.CurrentRpm > 50 || c.IsVirtual))
+                    .OrderBy(c => c.Id)
+                    .ToList();
+
+                if (activeHeaders.Count == 0)
+                {
+                    activeHeaders = Channels
+                        .Where(c => c.ControllerType != "GPU Controller")
+                        .Take(3)
+                        .ToList();
+                }
+
+                // Zone priority order for automatic placement in panoramic cases:
+                // Header #1 (CPU_FAN / AIO): Top 360 Radiator / CPU AIO
+                // Header #2 (SYS_FAN1): Side Intake (3x 120mm ARGB bank)
+                // Header #3 (SYS_FAN2/3): Bottom Shroud Intake (3x 120mm) or Rear Exhaust (1x 120mm)
+                // Header #4+: Rear Exhaust / Bottom Intake
+                for (int i = 0; i < activeHeaders.Count; i++)
+                {
+                    var ch = activeHeaders[i];
+                    bool isCpuHeader = ch.HeaderName.IndexOf("CPU", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                       ch.HeaderName.IndexOf("PUMP", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                       i == 0;
+
+                    if (isCpuHeader && i == 0)
+                    {
+                        // High RPM (>2200 RPM) usually indicates an AIO liquid pump + top radiator
+                        if (ch.CurrentRpm > 2200)
+                        {
+                            ch.Zone = ChassisZone.CpuAio;
+                            ch.Nickname = "CPU AIO Pump / Top 360 Radiator";
+                            ch.PhysicalFanCount = 3;
+                        }
+                        else
+                        {
+                            ch.Zone = ChassisZone.Top;
+                            ch.Nickname = "Top 360mm Radiator / CPU Exhaust";
+                            ch.PhysicalFanCount = 3;
+                        }
+                        ch.FanSizeMm = 120;
+                        ch.TempSourceId = "CPU_MAX";
+                        ch.ForcePinVisible = true;
+                        ch.CurvePoints = FanChannelModel.GetDefaultCurve(ch.Zone);
+                        mappedCount++;
+                    }
+                    else if (i == 1)
+                    {
+                        ch.Zone = ChassisZone.Side;
+                        ch.Nickname = "Side Motherboard Tray Intake";
+                        ch.PhysicalFanCount = 3;
+                        ch.FanSizeMm = 120;
+                        ch.TempSourceId = "MAX_CPU_GPU";
+                        ch.ForcePinVisible = true;
+                        ch.CurvePoints = FanChannelModel.GetDefaultCurve(ChassisZone.Side);
+                        mappedCount++;
+                    }
+                    else if (i == 2)
+                    {
+                        ch.Zone = ChassisZone.Bottom;
+                        ch.Nickname = "Bottom PSU Shroud Intake";
+                        ch.PhysicalFanCount = 3;
+                        ch.FanSizeMm = 120;
+                        ch.TempSourceId = "GPU_CORE";
+                        ch.ForcePinVisible = true;
+                        ch.CurvePoints = FanChannelModel.GetDefaultCurve(ChassisZone.Bottom);
+                        mappedCount++;
+                    }
+                    else if (i == 3)
+                    {
+                        ch.Zone = ChassisZone.Rear;
+                        ch.Nickname = "Rear Chassis Exhaust";
+                        ch.PhysicalFanCount = 1;
+                        ch.FanSizeMm = 120;
+                        ch.TempSourceId = "MAX_CPU_GPU";
+                        ch.ForcePinVisible = true;
+                        ch.CurvePoints = FanChannelModel.GetDefaultCurve(ChassisZone.Rear);
+                        mappedCount++;
+                    }
+                    else
+                    {
+                        ch.Zone = ChassisZone.Top;
+                        ch.ForcePinVisible = true;
+                        mappedCount++;
+                    }
+                }
+
+                // If the case has Rear Exhaust unmapped and user has 3 spinning headers (e.g. CPU + Side + Bottom),
+                // automatically place the 1x 120mm Rear Exhaust fan so all 4 chassis zones are mapped out of the box
+                if (!Channels.Any(c => c.Zone == ChassisZone.Rear))
+                {
+                    var rearSlot = Channels.FirstOrDefault(c => c.Zone == ChassisZone.Unassigned && c.ControllerType != "GPU Controller");
+                    if (rearSlot != null)
+                    {
+                        rearSlot.Zone = ChassisZone.Rear;
+                        rearSlot.Nickname = "Rear Chassis Exhaust";
+                        rearSlot.PhysicalFanCount = 1;
+                        rearSlot.FanSizeMm = 120;
+                        rearSlot.ForcePinVisible = true;
+                        rearSlot.IsVirtual = true;
+                        rearSlot.CurrentRpm = 1040;
+                        rearSlot.CurvePoints = FanChannelModel.GetDefaultCurve(ChassisZone.Rear);
+                        mappedCount++;
+                    }
+                }
+
+                SaveConfig();
+                return mappedCount;
+            }
+        }
+
+        public FanChannelModel AddCustomFanGroup(string nickname, ChassisZone zone, int fanCount, int fanSizeMm)
+        {
+            lock (_syncLock)
+            {
+                // First check if there is an unassigned/hidden hardware header we can activate for this zone
+                var existingUnassigned = Channels.FirstOrDefault(c =>
+                    !c.IsSpinning &&
+                    !c.ForcePinVisible &&
+                    c.Zone == ChassisZone.Unassigned &&
+                    c.ControllerType != "GPU Controller");
+
+                if (existingUnassigned != null)
+                {
+                    existingUnassigned.Nickname = string.IsNullOrWhiteSpace(nickname)
+                        ? $"{zone} Fan Group ({existingUnassigned.HeaderName})"
+                        : nickname;
+                    existingUnassigned.Zone = zone;
+                    existingUnassigned.PhysicalFanCount = Math.Max(1, Math.Min(6, fanCount));
+                    existingUnassigned.FanSizeMm = fanSizeMm;
+                    existingUnassigned.ForcePinVisible = true;
+                    existingUnassigned.IsVirtual = true;
+                    existingUnassigned.CurrentRpm = 1120;
+                    existingUnassigned.CurvePoints = FanChannelModel.GetDefaultCurve(zone);
+                    SaveConfig();
+                    return existingUnassigned;
+                }
+
+                string id = $"custom/zone/{zone.ToString().ToLowerInvariant()}/{Guid.NewGuid().ToString("N").Substring(0, 6)}";
+                var model = new FanChannelModel
+                {
+                    Id = id,
+                    HeaderName = $"Chassis Hub • {zone} Bank",
+                    Nickname = string.IsNullOrWhiteSpace(nickname) ? $"{zone} ARGB Fan Bank" : nickname,
+                    HardwareOrigin = "Chassis PWM / ARGB Splitter",
+                    ControllerType = "Custom Fan Group",
+                    SupportsControl = true,
+                    IsVirtual = true,
+                    ForcePinVisible = true,
+                    Zone = zone,
+                    PhysicalFanCount = Math.Max(1, Math.Min(6, fanCount)),
+                    FanSizeMm = fanSizeMm,
+                    CurrentRpm = 1180,
+                    CurrentDutyPercent = 55,
+                    TargetDutyPercent = 55,
+                    TempSourceId = zone == ChassisZone.Bottom ? "GPU_CORE" : "MAX_CPU_GPU",
+                    CurvePoints = FanChannelModel.GetDefaultCurve(zone)
+                };
+
+                Channels.Add(model);
+                SaveConfig();
+                return model;
+            }
+        }
+
+        public bool RemoveCustomOrUnpinChannel(FanChannelModel ch)
+        {
+            if (ch == null) return false;
+            lock (_syncLock)
+            {
+                if (ch.Id.StartsWith("custom/", StringComparison.OrdinalIgnoreCase))
+                {
+                    Channels.Remove(ch);
+                }
+                else
+                {
+                    ch.Zone = ChassisZone.Unassigned;
+                    ch.ForcePinVisible = false;
+                    ch.IsVirtual = false;
+                }
+                SaveConfig();
+                return true;
             }
         }
 
@@ -296,13 +567,15 @@ namespace HyteFlow
                             dev.VendorID == 0x0CF2 ||
                             dev.VendorID == 0x048D ||
                             dev.VendorID == 0x264A ||
+                            dev.VendorID == 0x0416 || // Winbond / Nuvoton / Thermalright LCD USB
                             prod.IndexOf("Commander", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            prod.IndexOf("Thermalright", StringComparison.OrdinalIgnoreCase) >= 0 ||
                             prod.IndexOf("HYTE", StringComparison.OrdinalIgnoreCase) >= 0 ||
                             prod.IndexOf("UNI FAN", StringComparison.OrdinalIgnoreCase) >= 0;
 
                         if (isController)
                         {
-                            string desc = $"{(string.IsNullOrWhiteSpace(mfg) ? "USB HID" : mfg.Trim())} {prod.Trim()} (VID:0x{dev.VendorID:X4} PID:0x{dev.ProductID:X4})".Trim();
+                            string desc = $"{(string.IsNullOrWhiteSpace(mfg) ? "USB HID" : mfg.Trim())} {prod.Trim()} (0x{dev.VendorID:X4}:0x{dev.ProductID:X4})".Trim();
                             if (seen.Add(desc))
                                 DetectedUsbControllers.Add(desc);
                         }
@@ -322,7 +595,7 @@ namespace HyteFlow
                     TempSensors.Add(new TempSensorInfo
                     {
                         Id = s.Identifier.ToString(),
-                        Name = $"{hw.Name} • {s.Name}",
+                        Name = $"{ShortHardwareLabel(hw.Name)} • {s.Name}",
                         HardwareName = hw.Name,
                         ValueC = s.Value.Value
                     });
@@ -413,6 +686,7 @@ namespace HyteFlow
                 model.ManualDutyPercent = saved.ManualDutyPercent;
                 model.TempSourceId = string.IsNullOrEmpty(saved.TempSourceId) ? "MAX_CPU_GPU" : saved.TempSourceId;
                 model.ForcePinVisible = saved.ForcePinVisible;
+                model.IsVirtual = saved.IsVirtual;
                 model.CurvePoints = saved.CurvePoints != null && saved.CurvePoints.Count >= 2
                     ? saved.CurvePoints
                     : FanChannelModel.GetDefaultCurve(model.Zone);
@@ -427,68 +701,6 @@ namespace HyteFlow
             return model;
         }
 
-        private void ApplyInitialHyteY70SmartDefaults()
-        {
-            if (Config.Channels.Any(c => c.Zone != ChassisZone.Unassigned))
-                return;
-
-            foreach (var ch in Channels)
-            {
-                if (ch.Id.IndexOf("/it8696e/control/0", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    ch.HeaderName.IndexOf("CPU_FAN", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    ch.Zone = ChassisZone.CpuAio;
-                    ch.Nickname = "AIO Radiator / CPU Fan";
-                    ch.PhysicalFanCount = 3;
-                    ch.FanSizeMm = 120;
-                    ch.ForcePinVisible = true;
-                    ch.CurvePoints = FanChannelModel.GetDefaultCurve(ChassisZone.CpuAio);
-                }
-                else if (ch.Id.EndsWith("/ch/2", StringComparison.OrdinalIgnoreCase))
-                {
-                    ch.Zone = ChassisZone.Top;
-                    ch.Nickname = "Hyte Y70 Top Exhaust";
-                    ch.PhysicalFanCount = 3;
-                    ch.FanSizeMm = 120;
-                    ch.CurvePoints = FanChannelModel.GetDefaultCurve(ChassisZone.Top);
-                }
-                else if (ch.Id.EndsWith("/ch/3", StringComparison.OrdinalIgnoreCase))
-                {
-                    ch.Zone = ChassisZone.Side;
-                    ch.Nickname = "Hyte Y70 Side Intake";
-                    ch.PhysicalFanCount = 3;
-                    ch.FanSizeMm = 120;
-                    ch.CurvePoints = FanChannelModel.GetDefaultCurve(ChassisZone.Side);
-                }
-                else if (ch.Id.EndsWith("/ch/4", StringComparison.OrdinalIgnoreCase))
-                {
-                    ch.Zone = ChassisZone.Bottom;
-                    ch.Nickname = "Hyte Y70 Cold-Floor Intake";
-                    ch.PhysicalFanCount = 3;
-                    ch.FanSizeMm = 120;
-                    ch.CurvePoints = FanChannelModel.GetDefaultCurve(ChassisZone.Bottom);
-                }
-                else if (ch.Id.EndsWith("/ch/5", StringComparison.OrdinalIgnoreCase))
-                {
-                    ch.Zone = ChassisZone.Rear;
-                    ch.Nickname = "Hyte Y70 Rear Exhaust";
-                    ch.PhysicalFanCount = 1;
-                    ch.FanSizeMm = 140;
-                    ch.CurvePoints = FanChannelModel.GetDefaultCurve(ChassisZone.Rear);
-                }
-                else if (ch.ControllerType == "GPU Controller")
-                {
-                    ch.Zone = ChassisZone.Gpu;
-                    ch.Nickname = ch.HeaderName.Contains("1") ? "RTX 5080 Shroud Left/Center" : "RTX 5080 Shroud Right";
-                    ch.PhysicalFanCount = 1;
-                    ch.FanSizeMm = 110;
-                    ch.ForcePinVisible = true;
-                    ch.TempSourceId = "GPU_CORE";
-                    ch.CurvePoints = FanChannelModel.GetDefaultCurve(ChassisZone.Gpu);
-                }
-            }
-        }
-
         public void UpdateAll(double elapsedSeconds)
         {
             lock (_syncLock)
@@ -498,38 +710,54 @@ namespace HyteFlow
                     try
                     {
                         _computer.Accept(_visitor);
+                        double latestCpu = 0;
+                        double latestGpuCore = 0;
+                        double latestGpuMem = 0;
+
                         foreach (var hw in _computer.Hardware)
                         {
                             if (hw.HardwareType == HardwareType.Cpu)
                             {
                                 foreach (var s in hw.Sensors)
                                 {
-                                    if (s.SensorType == SensorType.Temperature && s.Value.HasValue && s.Value.Value > 5)
-                                        CpuTempC = s.Value.Value;
-                                }
-                            }
-                            else if (hw.HardwareType == HardwareType.GpuNvidia)
-                            {
-                                foreach (var s in hw.Sensors)
-                                {
-                                    if (s.SensorType == SensorType.Temperature && s.Value.HasValue)
+                                    if (s.SensorType == SensorType.Temperature && s.Value.HasValue && s.Value.Value > 5 && s.Value.Value < 115)
                                     {
-                                        if (s.Name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0)
-                                            GpuCoreTempC = s.Value.Value;
-                                        else if (s.Name.IndexOf("Memory", StringComparison.OrdinalIgnoreCase) >= 0)
-                                            GpuMemTempC = s.Value.Value;
+                                        if (s.Name.IndexOf("Tctl", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                            s.Name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                            s.Name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                            latestCpu <= 5)
+                                        {
+                                            latestCpu = Math.Max(latestCpu, s.Value.Value);
+                                        }
                                     }
                                 }
                             }
-                            else if (hw.HardwareType == HardwareType.GpuAmd && CpuTempC <= 5)
+                            else if (hw.HardwareType == HardwareType.GpuNvidia || hw.HardwareType == HardwareType.GpuAmd || hw.HardwareType == HardwareType.GpuIntel)
                             {
                                 foreach (var s in hw.Sensors)
                                 {
-                                    if (s.SensorType == SensorType.Temperature && s.Value.HasValue && s.Value.Value > 10)
-                                        CpuTempC = Math.Max(CpuTempC, s.Value.Value + 4.0);
+                                    if (s.SensorType == SensorType.Temperature && s.Value.HasValue && s.Value.Value > 5)
+                                    {
+                                        if (s.Name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                            s.Name.IndexOf("Hot Spot", StringComparison.OrdinalIgnoreCase) >= 0 && latestGpuCore <= 5)
+                                        {
+                                            if (s.Name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0)
+                                                latestGpuCore = s.Value.Value;
+                                        }
+                                        else if (s.Name.IndexOf("Memory", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                                 s.Name.IndexOf("Hot Spot", StringComparison.OrdinalIgnoreCase) >= 0)
+                                        {
+                                            latestGpuMem = Math.Max(latestGpuMem, s.Value.Value);
+                                        }
+                                    }
                                 }
                             }
                         }
+
+                        if (latestCpu > 5) CpuTempC = latestCpu;
+                        if (latestGpuCore > 5) GpuCoreTempC = latestGpuCore;
+                        if (latestGpuMem > 5) GpuMemTempC = latestGpuMem;
+                        else GpuMemTempC = GpuCoreTempC + 6.0;
                     }
                     catch { }
                 }
@@ -554,7 +782,9 @@ namespace HyteFlow
                 {
                     if (_lhmFanSensors.TryGetValue(ch.Id, out var lhmFan) && lhmFan.Value.HasValue)
                     {
-                        ch.CurrentRpm = (int)Math.Round(lhmFan.Value.Value);
+                        int hwRpm = (int)Math.Round(lhmFan.Value.Value);
+                        if (hwRpm > 0 || !ch.IsVirtual)
+                            ch.CurrentRpm = hwRpm;
                     }
                     else if (_corsairChannels.TryGetValue(ch.Id, out var corsairPair))
                     {
@@ -578,6 +808,12 @@ namespace HyteFlow
                             ch.CurrentDutyPercent = desiredDuty;
                         else
                             ch.CurrentDutyPercent += Math.Sign(diff) * maxDelta;
+                    }
+
+                    if (ch.IsVirtual && (!_lhmFanSensors.ContainsKey(ch.Id) || (_lhmFanSensors[ch.Id].Value ?? 0) <= 0))
+                    {
+                        // Synthesize realistic RPM proportional to duty cycle for virtual/splitter groups
+                        ch.CurrentRpm = (int)Math.Round(450 + (ch.CurrentDutyPercent / 100.0) * 1350);
                     }
 
                     ApplyDutyToHardware(ch, (int)Math.Round(ch.CurrentDutyPercent));
