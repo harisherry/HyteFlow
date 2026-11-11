@@ -1,4 +1,20 @@
-*.log
+# Build outputs & binaries
+bin/
+obj/
+/HyteFlow.exe
+/*.dll
 *.pdb
 *.xml
+
+# Runtime state & logs
+*.log
+hyteflow_config.json
 *.hyteflow_backup.json
+
+# IDE & OS files
+.vs/
+.idea/
+*.user
+*.suo
+Thumbs.db
+.DS_Store

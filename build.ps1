@@ -1,15 +1,15 @@
 $ErrorActionPreference = "Stop"
 
-$csc = "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\Roslyn\csc.exe"
-if (-not (Test-Path $csc)) { $csc = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\Roslyn\csc.exe" }
+$csc = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\Roslyn\csc.exe"
 if (-not (Test-Path $csc)) {
     $csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 }
 $fw = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319"
 $wpf = "$fw\WPF"
 $dir = $PSScriptRoot
+$libDir = if (Test-Path "$dir\lib") { "$dir\lib" } else { $dir }
 
-Copy-Item "$dir\FanControl.CorsairLink.dll" "$dir\FanControl.CorsairLink.merged.dll" -Force -ErrorAction SilentlyContinue
+Copy-Item "$libDir\FanControl.CorsairLink.dll" "$libDir\FanControl.CorsairLink.merged.dll" -Force -ErrorAction SilentlyContinue
 
 $iconArg = @()
 if (Test-Path "$dir\hyteflow.ico") {
@@ -31,11 +31,11 @@ if (Test-Path "$dir\hyteflow.ico") {
     /r:"$wpf\WindowsBase.dll" `
     /r:"$wpf\PresentationCore.dll" `
     /r:"$wpf\PresentationFramework.dll" `
-    /r:"$dir\LibreHardwareMonitorLib.dll" `
-    /r:"$dir\HidSharp.dll" `
-    /r:"$dir\FanControl.Plugins.dll" `
-    /r:"$dir\FanControl.CorsairLink.dll" `
-    /r:"$dir\Newtonsoft.Json.dll" `
+    /r:"$libDir\LibreHardwareMonitorLib.dll" `
+    /r:"$libDir\HidSharp.dll" `
+    /r:"$libDir\FanControl.Plugins.dll" `
+    /r:"$libDir\FanControl.CorsairLink.dll" `
+    /r:"$libDir\Newtonsoft.Json.dll" `
     /out:"$dir\HyteFlow.exe" `
     "$dir\src\Models.cs" `
     "$dir\src\CaseCatalog.cs" `
@@ -44,5 +44,9 @@ if (Test-Path "$dir\hyteflow.ico") {
     "$dir\src\CustomControls.cs" `
     "$dir\src\MainWindow.cs" `
     "$dir\src\Program.cs"
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Compilation failed with exit code $LASTEXITCODE"
+}
 
 Write-Host "Successfully compiled $dir\HyteFlow.exe"

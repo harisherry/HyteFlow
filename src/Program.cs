@@ -92,9 +92,13 @@ namespace HyteFlow
                 name = "FanControl.CorsairLink";
 
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            string candidate = Path.Combine(baseDir, name + ".dll");
-            if (File.Exists(candidate))
-                return Assembly.LoadFrom(candidate);
+            string libCandidate = Path.Combine(baseDir, "lib", name + ".dll");
+            if (File.Exists(libCandidate))
+                return Assembly.LoadFrom(libCandidate);
+
+            string rootCandidate = Path.Combine(baseDir, name + ".dll");
+            if (File.Exists(rootCandidate))
+                return Assembly.LoadFrom(rootCandidate);
 
             return null;
         }
